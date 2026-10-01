@@ -4,3 +4,8 @@ streamlit
 requests
 pydantic
 python-dotenv
+
+# test dependencies (T1 foundation test suite)
+pytest
+pytest-asyncio
+httpx
