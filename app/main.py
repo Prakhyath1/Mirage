@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import asyncio
 from . import db
 from . import router
 from . import threat_summary
@@ -29,7 +30,9 @@ async def handle_command(req: CommandRequest):
     if not req.session_id:
         raise HTTPException(status_code=400, detail="session_id required")
     try:
-        output = router.process_command(req.session_id, req.command)
+        # Sync router (may call the LLM engine) must never block the event
+        # loop — run it on a worker thread.
+        output = await asyncio.to_thread(router.process_command, req.session_id, req.command)
         return {"output": output}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

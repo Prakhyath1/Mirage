@@ -26,7 +26,7 @@ def process_command(session_id, command):
             output, new_cwd = vfs.execute_vfs_command(session_id, command, cwd)
             source = "vfs"
         else:
-            output = llm_engine.generate_response(command, cwd)
+            output = llm_engine.generate_response(command, cwd, session_id=session_id)
             source = "llm"
     
     if new_cwd != cwd:
