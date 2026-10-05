@@ -2,6 +2,8 @@ import sqlite3
 import time
 import os
 
+from . import config
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "mirage.db")
 
@@ -13,7 +15,7 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
@@ -26,7 +28,7 @@ def init_db():
             threat_summary TEXT
         )
     ''')
-    
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +39,7 @@ def init_db():
             source TEXT
         )
     ''')
-    
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS virtual_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +53,7 @@ def init_db():
             is_dir INTEGER DEFAULT 0
         )
     ''')
-    
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +63,7 @@ def init_db():
             details TEXT
         )
     ''')
-    
+
     conn.commit()
     conn.close()
 
@@ -92,15 +94,17 @@ def get_or_create_session(session_id):
     c = conn.cursor()
     c.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
     row = c.fetchone()
-    
+
     if not row:
         now = time.time()
-        default_cwd = "/home/ubuntu"
+        # Fake identity, never the host's: config.DEFAULT_USER is a fixed
+        # decoy ("admin"), so the honeypot doesn't leak the real username.
+        default_cwd = config.DEFAULT_CWD
         c.execute('''
             INSERT INTO sessions (session_id, created_at, last_seen, cwd, threat_score, threat_level, containment_active, threat_summary)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (session_id, now, now, default_cwd, 0, "Low", 0, None))
-        
+
         honeytokens = [
             (".env", "DB_PASSWORD=supersecret123\nAPI_KEY=sk-12345"),
             ("aws_credentials.txt", "[default]\naws_access_key_id = AKIAIOSFODNN7EXAMPLE"),
@@ -112,20 +116,20 @@ def get_or_create_session(session_id):
                 INSERT INTO virtual_files (session_id, path, content, is_honeytoken)
                 VALUES (?, ?, ?, 1)
             ''', (session_id, full_path, content))
-            
+
         conn.commit()
         row = c.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
-    
+
     conn.close()
     return dict(row)
 
-def update_session(session_id, cwd=None, threat_score=None, threat_level=None, 
+def update_session(session_id, cwd=None, threat_score=None, threat_level=None,
                    containment_active=None, threat_summary=None):
     conn = get_connection()
     c = conn.cursor()
     updates = []
     values = []
-    
+
     if cwd is not None:
         updates.append("cwd = ?")
         values.append(cwd)
@@ -141,11 +145,11 @@ def update_session(session_id, cwd=None, threat_score=None, threat_level=None,
     if threat_summary is not None:
         updates.append("threat_summary = ?")
         values.append(threat_summary)
-        
+
     updates.append("last_seen = ?")
     values.append(time.time())
     values.append(session_id)
-    
+
     sql = f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?"
     c.execute(sql, values)
     conn.commit()
@@ -155,10 +159,10 @@ def get_session_commands(session_id, limit=10):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT command, output, source, timestamp 
-        FROM logs 
-        WHERE session_id = ? 
-        ORDER BY timestamp DESC 
+        SELECT command, output, source, timestamp
+        FROM logs
+        WHERE session_id = ?
+        ORDER BY timestamp DESC
         LIMIT ?
     ''', (session_id, limit))
     rows = c.fetchall()
@@ -201,7 +205,7 @@ def save_virtual_file(session_id, path, content, is_honeytoken=0, permissions="-
     c = conn.cursor()
     normalized_path = os.path.normpath(path)
     filesize = len(content) if content else 0
-    
+
     c.execute("SELECT id FROM virtual_files WHERE session_id = ? AND path = ?", (session_id, normalized_path))
     if c.fetchone():
         c.execute('''
@@ -213,32 +217,48 @@ def save_virtual_file(session_id, path, content, is_honeytoken=0, permissions="-
             INSERT INTO virtual_files (session_id, path, content, is_honeytoken, permissions, owner, filesize, is_dir)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (session_id, normalized_path, content, is_honeytoken, permissions, owner, filesize, is_dir))
-    
+
     conn.commit()
     conn.close()
 
 def delete_virtual_file(session_id, path):
     conn = get_connection()
     c = conn.cursor()
+    normalized_path = os.path.normpath(path)
     c.execute('''
         DELETE FROM virtual_files WHERE session_id = ? AND path = ?
-    ''', (session_id, path))
+    ''', (session_id, normalized_path))
     conn.commit()
     conn.close()
 
-def list_virtual_files(session_id, cwd):
+def list_virtual_files(session_id, cwd=None):
     conn = get_connection()
     c = conn.cursor()
-    prefix = cwd.rstrip('/') + '/'
-    if cwd == "/":
-        prefix = "/"
-    c.execute('''
-        SELECT * FROM virtual_files 
-        WHERE session_id = ? AND (path LIKE ? OR path LIKE ?)
-    ''', (session_id, prefix + '%', cwd + '/%'))
+    if cwd is None:
+        # Whole-session inventory (canary listing): no path filter.
+        c.execute('''
+            SELECT * FROM virtual_files
+            WHERE session_id = ?
+        ''', (session_id,))
+    else:
+        prefix = "/" if cwd == "/" else cwd.rstrip('/') + '/'
+        c.execute('''
+            SELECT * FROM virtual_files
+            WHERE session_id = ? AND path LIKE ?
+        ''', (session_id, prefix + '%'))
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def count_virtual_files(session_id):
+    """Number of virtual files a session holds (for MAX_SESSION_FILES)."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM virtual_files WHERE session_id = ?', (session_id,))
+    count = c.fetchone()[0]
+    conn.close()
+    return count
 
 def get_all_logs():
     conn = get_connection()
@@ -260,6 +280,17 @@ def get_all_events():
     conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM events ORDER BY timestamp DESC LIMIT 50")
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_session_events(session_id, limit=50):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT * FROM events WHERE session_id = ?
+        ORDER BY timestamp DESC LIMIT ?
+    ''', (session_id, limit))
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]

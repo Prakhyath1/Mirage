@@ -1,7 +1,18 @@
-import streamlit as st
-from app import db
+import os
+import sys
 import time
+
 import pandas as pd
+import streamlit as st
+
+# Streamlit runs this file with its own directory (dashboard/) on sys.path,
+# not the repo root, so a bare `streamlit run dashboard/dashboard.py` cannot
+# import the app package. Anchor the repo root before importing it.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from app import db
 
 st.set_page_config(page_title="Mirage Dashboard", layout="wide", page_icon="🪞")
 
@@ -15,11 +26,10 @@ st.markdown("""
 
 st.title("🪞 Mirage Honeypot Dashboard")
 
-# Auto-refresh checkbox
+# Auto-refresh toggle. The rerun itself fires at the very bottom of the
+# script: st.rerun() restarts execution, so any statement below the call
+# site would never render.
 auto_refresh = st.checkbox("Auto Refresh", value=True)
-if auto_refresh:
-    time.sleep(2)
-    st.rerun()
 
 # Initialize DB (in case dashboard started before main)
 db.init_db()
@@ -44,8 +54,6 @@ st.divider()
 st.subheader("🚩 Active Sessions & Threat Levels")
 
 if sessions:
-    import pandas as pd
-
     df = pd.DataFrame({
         "Session ID": [s['session_id'] for s in sessions],
         "CWD": [s['cwd'] for s in sessions],
@@ -62,7 +70,7 @@ if sessions:
         else:
             return "color: lime; font-weight: bold;"
 
-    styled_df = df.style.applymap(color_level, subset=["Level"])
+    styled_df = df.style.map(color_level, subset=["Level"])
 
     st.dataframe(styled_df, use_container_width=True)
 
@@ -99,3 +107,10 @@ if logs:
     st.dataframe(log_data, use_container_width=True)
 else:
     st.info("No commands logged yet.")
+
+
+# Auto-refresh: st.rerun() restarts the script immediately, so this must be
+# the last statement — every element above has already rendered by now.
+if auto_refresh:
+    time.sleep(2)
+    st.rerun()
