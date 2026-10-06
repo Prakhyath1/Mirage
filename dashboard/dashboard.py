@@ -2,6 +2,7 @@ import os
 import sys
 import time
 
+import pandas as pd
 import streamlit as st
 
 # Streamlit runs this file with its own directory (dashboard/) on sys.path,
@@ -13,57 +14,100 @@ if _REPO_ROOT not in sys.path:
 
 from app import db
 
-st.set_page_config(page_title="MIRAGE Dashboard", layout="wide", page_icon="🪞")
+st.set_page_config(page_title="Mirage Dashboard", layout="wide", page_icon="🪞")
+
+# Custom CSS for Dark Theme
+st.markdown("""
+    <style>
+    .stApp { background-color: #0e1117; color: #fafafa; }
+    .metric-card { background-color: #262730; padding: 20px; border-radius: 10px; }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🪞 Mirage Honeypot Dashboard")
 
 # Auto-refresh toggle. The rerun itself fires at the very bottom of the
 # script: st.rerun() restarts execution, so any statement below the call
-# site would never render. Exactly one checkbox exists before any view
-# renders — the pinned T3 test counts them.
+# site would never render.
 auto_refresh = st.checkbox("Auto Refresh", value=True)
 
-# T4: initialize the pipeline DB lazily (matches T3's original behavior —
-# the dashboard may start before the backend). Mirrors the legacy seam
-# while the foundation runtime owns session creation.
+# Initialize DB (in case dashboard started before main)
 db.init_db()
 
-from dashboard.services.repository import MirageRepository
+# Metrics
+sessions = db.get_all_sessions()
+events = db.get_all_events()
+logs = db.get_all_logs()
 
-_repo = MirageRepository()
+high_threat_sessions = [s for s in sessions if s['threat_level'] == "High"]
+honeytoken_events = [e for e in events if e['event_type'] == "HONEYTOKEN_ACCESS"]
 
-# --- views -----------------------------------------------------------------
-from dashboard.views import overview
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total Sessions", len(sessions))
+col2.metric("Active Sessions", len([s for s in sessions if time.time() - s['last_seen'] < 300]))
+col3.metric("High Threat Actors", len(high_threat_sessions))
+col4.metric("Honeytoken Trips", len(honeytoken_events))
 
-overview.render(_repo)
+st.divider()
 
-# T4 additions live in their own views, reachable through the sidebar.
-# They are imported after the pinned Overview contract is satisfied, and
-# only one view renders per run, so Overview's element counts stay exact.
-from dashboard.views import agent_activity, security_events, sessions, threat_intel  # noqa: E402,F401
+# Threat Map / Session List
+st.subheader("🚩 Active Sessions & Threat Levels")
 
-st.sidebar.title("Navigation")
-_view = st.sidebar.radio(
-    "View",
-    ["Overview", "Sessions", "Security Events", "Threat Intelligence", "Agent Activity", "System Health"],
-    label_visibility="collapsed",
-)
-st.sidebar.caption("MIRAGE T4 · read-only")
+if sessions:
+    df = pd.DataFrame({
+        "Session ID": [s['session_id'] for s in sessions],
+        "CWD": [s['cwd'] for s in sessions],
+        "Threat Score": [s['threat_score'] for s in sessions],
+        "Level": [s['threat_level'] for s in sessions],
+        "Last Seen": [time.strftime('%H:%M:%S', time.localtime(s['last_seen'])) for s in sessions]
+    })
 
-if _view == "Sessions":
-    sessions.render(_repo)
-elif _view == "Security Events":
-    security_events.render(_repo)
-elif _view == "Threat Intelligence":
-    threat_intel.render(_repo)
-elif _view == "Agent Activity":
-    agent_activity.render(_repo)
-# Overview already rendered above; System Health shows backend-reported
-# component status with the T4-only metric tiles.
-elif _view == "System Health":
-    from dashboard.views import system_health as system_health_view
+    def color_level(val):
+        if val == "High":
+            return "color: red; font-weight: bold;"
+        elif val == "Medium":
+            return "color: orange; font-weight: bold;"
+        else:
+            return "color: lime; font-weight: bold;"
 
-    system_health_view.render(_repo)
+    styled_df = df.style.map(color_level, subset=["Level"])
+
+    st.dataframe(styled_df, use_container_width=True)
+
+else:
+    st.info("No active sessions detected.")
+
+st.divider()
+
+
+# Honeytoken Events
+st.subheader("🍯 Honeytoken Access Events")
+if honeytoken_events:
+    event_data = {
+        "Timestamp": [time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(e['timestamp'])) for e in honeytoken_events],
+        "Session ID": [e['session_id'] for e in honeytoken_events],
+        "Details": [e['details'] for e in honeytoken_events]
+    }
+    st.dataframe(event_data, use_container_width=True)
+else:
+    st.success("No honeytokens accessed yet.")
+
+st.divider()
+
+# Live Logs
+st.subheader("📜 Command Logs")
+if logs:
+    log_data = {
+        "Time": [time.strftime('%H:%M:%S', time.localtime(l['timestamp'])) for l in logs],
+        "Session": [l['session_id'] for l in logs],
+        "Command": [l['command'] for l in logs],
+        "Source": [l['source'] for l in logs],
+        "Output": [l['output'] for l in logs]
+    }
+    st.dataframe(log_data, use_container_width=True)
+else:
+    st.info("No commands logged yet.")
+
 
 # Auto-refresh: st.rerun() restarts the script immediately, so this must be
 # the last statement — every element above has already rendered by now.

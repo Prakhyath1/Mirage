@@ -1,47 +1,49 @@
+"""Containment policy (STEP 8).
+
+Intercepts commands when containment mode is active for a session.
+The policy itself is enforced inside the sandbox (sandbox.execute with
+containment=True), so no dispatch path can bypass it:
+
+  DESTRUCTIVE  → blocked with a realistic error, event logged
+  SENSITIVE    → allowed but the output is degraded (never leaks credentials)
+  RECON / SAFE → allowed normally through the sandbox
+  UNKNOWN      → LLM engine (never the host)
+
+Containment activates automatically when behavior.py escalates a session to
+High threat.
+"""
+
+from . import classifier
+from . import config
 from . import db
-from . import vfs
 from . import llm_engine
+from . import logger
+from . import sandbox
+from .vfs import parser
 
-SENSITIVE_COMMANDS = [
-    "sudo", "su", "chmod", "chown", "shadow", "passwd",
-    "ssh", "nc", "netcat", "curl", "wget", "scp", "rsync",
-    "dd", "mkfs", "mount", "umount", "kill", "pkill"
-]
+log = logger.get_logger("containment")
 
-def is_sensitive_command(command: str) -> bool:
-    """Check if command contains sensitive keywords."""
-    cmd_lower = command.lower().strip()
-    for sensitive in SENSITIVE_COMMANDS:
-        if sensitive in cmd_lower:
-            return True
-    if "rm -rf" in cmd_lower:
-        return True
-    return False
 
 def handle_containment(session_id: str, command: str, cwd: str) -> str:
-    """
-    Intercepts commands in containment mode.
-    Blocks sensitive commands, allows safe informational commands.
-    """
-    if is_sensitive_command(command):
-        db.log_event(session_id, "CONTAINMENT_BLOCK", f"Command: {command}")
-        
-        if "cat" in command and ("shadow" in command or "passwd" in command):
-            return "Access restricted by system policy"
-        if "sudo" in command or "su" in command:
-            return "Permission denied"
-        if "rm -rf" in command:
-            return "Operation not permitted"
-            
-        return "Permission denied"
-    
+    """Intercepts commands in containment mode."""
     try:
-        output, new_cwd = vfs.execute_vfs_command(session_id, command, cwd)
-        if output is not None:
-            if new_cwd != cwd:
-                db.update_session(session_id, cwd=new_cwd)
-            return output
-        
-        return llm_engine.generate_response(command, cwd)
-    except Exception:
-        return "bash: command execution restricted"
+        pipeline = parser.parse(command)
+    except parser.ParseError:
+        pipeline = None
+
+    category = classifier.classify(pipeline) if pipeline else config.CATEGORY_UNKNOWN
+
+    if category == config.CATEGORY_DESTRUCTIVE:
+        db.log_event(session_id, "CONTAINMENT_BLOCK", f"Command: {command}")
+        logger.security_event("CONTAINMENT_BLOCK", session_id, command)
+    elif category == config.CATEGORY_SENSITIVE:
+        db.log_event(session_id, "CONTAINMENT_SENSITIVE", f"Command: {command}")
+
+    if category == config.CATEGORY_UNKNOWN:
+        # The sandbox is bypassed on the LLM path, so log the command row
+        # here — every command must land in the logs exactly once.
+        output = llm_engine.generate_response(command, cwd)
+        db.log_command(session_id, command, output, "llm")
+        return output
+
+    return sandbox.execute(session_id, command, cwd, containment=True)

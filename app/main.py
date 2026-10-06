@@ -18,8 +18,12 @@ Union of the three team entry points:
 The runtime lives on ``app.state.runtime``; routes only ever talk to it.
 Legacy prototype commands stay under ``/legacy`` (T1 layout).
 """
-from __future__ import annotations
+# NOTE: no ``from __future__ import annotations`` here. FastAPI resolves
+# route signatures at decoration time; the T3 schemas are imported as
+# locals inside _mount_t3_routes, so lazy (string) annotations would be
+# unresolvable ForwardRefs and /openapi.json would 500.
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -133,10 +137,13 @@ def _mount_t3_routes(app: FastAPI) -> None:
         try:
             from . import router as legacy_router
 
-            output = await legacy_router.process_command(req.session_id, req.command)
+            # T3's pipeline is sync (sqlite + sandbox); run it off the loop.
+            output = await asyncio.to_thread(
+                legacy_router.process_command, req.session_id, req.command
+            )
             return {"output": output}
         except Exception as e:
-            log.error("command failed for session %s: %s", req.session_id, e)
+            log.error("command failed", session_id=req.session_id, error=str(e)[:200])
             raise HTTPException(status_code=500, detail="internal error")
 
     @app.get("/session_summary/{session_id}", response_model=SessionSummaryResponse)
@@ -190,8 +197,9 @@ def _mount_t3_routes(app: FastAPI) -> None:
         if not db.get_session_by_id(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
         # Trip status comes from HONEYTOKEN_ACCESS events (details:
-        # "Path: <p>"), newest first — a canary merely existing is not a
-        # trip, and there is no last_accessed column to read.
+        # "Path: <p>" — app/honeytokens.py:27), newest first — a canary
+        # merely existing is not a trip, and there is no last_accessed
+        # column.
         accesses = {}
         for e in db.get_session_events(session_id, limit=500):
             details = e.get("details") or ""

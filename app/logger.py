@@ -152,3 +152,14 @@ def get_logger(component: str) -> ComponentLogger:
         log = get_logger("t2.agentic")
     """
     return ComponentLogger(component)
+
+
+def security_event(event_type: str, session_id: str, details: str) -> None:
+    """Console-log a security event (T3 pipeline convention).
+
+    Callers must also ``db.log_event()`` so the event reaches the audit
+    trail / dashboard — this is the console side only.
+    """
+    ComponentLogger("mirage.security").warning(
+        "security event", event_type=event_type, session_id=session_id, details=details
+    )

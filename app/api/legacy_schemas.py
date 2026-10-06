@@ -10,8 +10,6 @@ verbatim here (``docs/integration/T4_API_CONTRACT.md`` pins them).
 Honeytoken metadata only ever travels through these models; file
 contents never leave the pipeline.
 """
-from __future__ import annotations
-
 from typing import Optional
 
 from pydantic import BaseModel, Field
