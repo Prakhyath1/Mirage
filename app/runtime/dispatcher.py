@@ -26,6 +26,7 @@ from __future__ import annotations
 import time
 from typing import Optional, Protocol, runtime_checkable
 
+from .. import config
 from ..config import Settings
 from ..core.ids import is_valid_id
 from ..core.result import RuntimeResult
@@ -50,25 +51,29 @@ log = get_logger("runtime.dispatcher")
 # is registered. Anything a handler claims never reaches the fallback.
 _FALLBACK_HINTS: tuple[tuple[str, str], ...] = (
     # (prefix, simulated response) — static text only, nothing executed.
-    ("whoami", "ubuntu\n"),
+    # Identity lines use the T3 decoy identity (config.DEFAULT_USER),
+    # never the host user: the fallback must present the same fake
+    # identity as the pipeline so a handler outage cannot leak it.
+    ("whoami", f"{config.DEFAULT_USER}\n"),
     ("hostname", "mirage-host\n"),
     ("uname", "Linux mirage-host 5.15.0-generic #1 SMP x86_64 GNU/Linux\n"),
-    ("id", "uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu)\n"),
-    ("pwd", "/home/ubuntu\n"),
+    ("id", f"uid=1000({config.DEFAULT_USER}) gid=1000({config.DEFAULT_USER}) "
+           f"groups=1000({config.DEFAULT_USER})\n"),
+    ("pwd", f"{config.DEFAULT_HOME}\n"),
     ("ls", "Desktop  Documents  Downloads  examples.desktop\n"),
     ("cat /etc/passwd",
      "root:x:0:0:root:/root:/bin/bash\n"
-     "ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash\n"),
+     f"{config.DEFAULT_USER}:x:1000:1000:Admin:{config.DEFAULT_HOME}:/bin/bash\n"),
     ("cat /etc/os-release",
      'NAME="Ubuntu"\nVERSION="22.04.3 LTS (Jammy Jellyfish)"\n'),
     ("uptime", " 14:23:11 up 3 days,  2:41,  1 user,  load average: 0.08, 0.03, 0.01\n"),
     ("w", " 14:23 up 3 days, 2:41, 1 user, load average: 0.08, 0.03, 0.01\n"),
     ("ps", "  PID TTY          TIME CMD\n 1234 pts/0    00:00:00 bash\n"),
     ("netstat", "Active Internet connections (w/o servers)\n"),
-    ("ifconfig", "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n"),
-    ("crontab", "no crontab for ubuntu\n"),
+    ("ifconfig", "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu: 1500\n"),
+    ("crontab", f"no crontab for {config.DEFAULT_USER}\n"),
     ("sudo", "sudo: unable to resolve host mirage-host: Name or service not known\n"
-             "ubuntu is not in the sudoers file.  This incident will be reported.\n"),
+             f"{config.DEFAULT_USER} is not in the sudoers file.  This incident will be reported.\n"),
 )
 _UNRECOGNISED = (
     "bash: {first}: command not found\n"

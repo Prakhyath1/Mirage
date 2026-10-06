@@ -46,7 +46,7 @@ class TestVerticalSlice:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["stdout"] == "ubuntu\n"
+        assert body["stdout"] == "admin\n"  # decoy identity (T3 discipline: never the host user)
         assert body["simulated"] is True
         command_id = body["command_id"]
 

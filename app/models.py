@@ -50,7 +50,7 @@ class Session:
     username: str = ""
     auth_method: str = ""
     auth_success: bool = False
-    cwd: str = "/home/ubuntu"
+    cwd: str = "/home/admin"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
@@ -60,7 +60,7 @@ class Session:
         username: str = "",
         auth_method: str = "",
         auth_success: bool = False,
-        cwd: str = "/home/ubuntu",
+        cwd: str = "/home/admin",
         metadata: Optional[dict[str, Any]] = None,
         session_id: Optional[str] = None,
     ) -> "Session":
@@ -111,7 +111,7 @@ class CommandRequest:
     session_id: str
     raw_command: str
     timestamp: float
-    working_directory: str = "/home/ubuntu"
+    working_directory: str = "/home/admin"
     terminal: Optional[dict[str, Any]] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -119,7 +119,7 @@ class CommandRequest:
     def new(
         session_id: str,
         raw_command: str,
-        working_directory: str = "/home/ubuntu",
+        working_directory: str = "/home/admin",
         terminal: Optional[dict[str, Any]] = None,
         metadata: Optional[dict[str, Any]] = None,
         command_id: Optional[str] = None,

@@ -34,7 +34,7 @@ DDL_STATEMENTS: tuple[str, ...] = (
         username TEXT NOT NULL DEFAULT '',
         auth_method TEXT NOT NULL DEFAULT '',
         auth_success INTEGER NOT NULL DEFAULT 0,
-        cwd TEXT NOT NULL DEFAULT '/home/ubuntu',
+        cwd TEXT NOT NULL DEFAULT '/home/admin',
         metadata TEXT NOT NULL DEFAULT '{}'
     )
     """,
@@ -44,7 +44,7 @@ DDL_STATEMENTS: tuple[str, ...] = (
         session_id TEXT NOT NULL,
         raw_command TEXT NOT NULL,
         timestamp REAL NOT NULL,
-        working_directory TEXT NOT NULL DEFAULT '/home/ubuntu',
+        working_directory TEXT NOT NULL DEFAULT '/home/admin',
         terminal TEXT NOT NULL DEFAULT '{}',
         metadata TEXT NOT NULL DEFAULT '{}',
         FOREIGN KEY (session_id) REFERENCES sessions(session_id)

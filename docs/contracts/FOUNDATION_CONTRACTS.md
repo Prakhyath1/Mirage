@@ -26,7 +26,7 @@ Mutate nothing; use the provided copy helpers.
 | `username` | `str` | attempted username |
 | `auth_method` | `str` | e.g. `"password"`, `"publickey"` |
 | `auth_success` | `bool` | verdict only — **passwords are never stored** |
-| `cwd` | `str` | defaults `"/home/ubuntu"` |
+| `cwd` | `str` | defaults `"/home/admin"` (decoy identity, T3 discipline) |
 | `metadata` | `dict` | free-form, size-capped at storage |
 
 Factory: `Session.new(source_address="", source_port=0, username="", auth_method="", auth_success=False, cwd="/home/ubuntu", metadata=None, session_id=None)` — status starts `CREATED`, ID generated server-side unless supplied.
@@ -41,11 +41,11 @@ Change: `session.with_changes(**fields)` → frozen copy with `updated_at` refre
 | `session_id` | `str` | owning session |
 | `raw_command` | `str` | attacker text, stored **verbatim as data** |
 | `timestamp` | `float` | intake time |
-| `working_directory` | `str` | defaults `"/home/ubuntu"` |
+| `working_directory` | `str` | defaults `"/home/admin"` (decoy identity, T3 discipline) |
 | `terminal` | `Optional[dict]` | PTY info when known (`term/width/height`) |
 | `metadata` | `dict` | |
 
-Factory: `CommandRequest.new(session_id, raw_command, working_directory="/home/ubuntu", terminal=None, metadata=None, command_id=None)`.
+Factory: `CommandRequest.new(session_id, raw_command, working_directory="/home/admin", terminal=None, metadata=None, command_id=None)`.
 
 ### CommandResult
 
@@ -165,7 +165,7 @@ class CommandHandler(Protocol):
 - Intake is persisted **before** any handler runs (evidence is never lost
   even on crash).
 - `SafeFallbackHandler` (name `"safe_fallback"`) is the terminal handler:
-  static simulated replies (`whoami` → `ubuntu\n`, …), exit 127
+  static simulated replies (`whoami` → the decoy user, …), exit 127
   `bash: {first-token}: command not found` for unknown commands. **It
   never executes anything on the host.**
 

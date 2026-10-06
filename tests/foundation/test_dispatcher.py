@@ -117,7 +117,7 @@ class TestFallback:
         result = await dispatcher.dispatch(
             _req(session.session_id, "whoami"), session
         )
-        assert result.stdout == "ubuntu\n"
+        assert result.stdout == "admin\n"  # decoy identity (T3 discipline: never the host user)
         assert result.exit_code == 0
 
     async def test_fallback_prefix_match(self, pipeline):

@@ -116,7 +116,7 @@ class TestCommandEndpoint:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["stdout"] == "ubuntu\n"
+        assert body["stdout"] == "admin\n"  # decoy identity (T3 discipline: never the host user)
         assert body["exit_code"] == 0
         assert body["simulated"] is True
         assert body["result_type"] == "fallback"
