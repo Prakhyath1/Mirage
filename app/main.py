@@ -61,9 +61,9 @@ async def _lifespan(app: FastAPI):
     try:
         from . import db as legacy_db
 
-        await legacy_db.init_db()
-        await legacy_db.migrate_add_threat_summary()
-        await legacy_db.migrate_add_containment_active()
+        legacy_db.init_db()
+        legacy_db.migrate_add_threat_summary()
+        legacy_db.migrate_add_containment_active()
     except Exception as exc:  # pragma: no cover - defensive
         log.warning("legacy pipeline db init failed", error=str(exc)[:200])
 
@@ -115,14 +115,21 @@ def _mount_t3_routes(app: FastAPI) -> None:
     """
     try:
         from . import db
-        from . import models
         from . import threat_summary
+        from .api.legacy_schemas import (
+            CommandRequest,
+            CommandResponse,
+            EventInfo,
+            HoneytokenInfo,
+            SessionInfo,
+            SessionSummaryResponse,
+        )
     except Exception as exc:  # pragma: no cover - import-time env issues
         log.warning("t3 pipeline modules unavailable", error=str(exc)[:200])
         return
 
-    @app.post("/command", response_model=models.CommandResponse)
-    async def handle_command(req: models.CommandRequest):
+    @app.post("/command", response_model=CommandResponse)
+    async def handle_command(req: CommandRequest):
         try:
             from . import router as legacy_router
 
@@ -132,7 +139,7 @@ def _mount_t3_routes(app: FastAPI) -> None:
             log.error("command failed for session %s: %s", req.session_id, e)
             raise HTTPException(status_code=500, detail="internal error")
 
-    @app.get("/session_summary/{session_id}", response_model=models.SessionSummaryResponse)
+    @app.get("/session_summary/{session_id}", response_model=SessionSummaryResponse)
     async def get_session_summary(session_id: str):
         session = db.get_session_by_id(session_id)
         if not session:
@@ -145,7 +152,7 @@ def _mount_t3_routes(app: FastAPI) -> None:
             "live_summary": live_summary,
         }
 
-    @app.get("/session/{session_id}", response_model=models.SessionInfo)
+    @app.get("/session/{session_id}", response_model=SessionInfo)
     async def get_session(session_id: str):
         """Session state for the T4 dashboard: threat score, containment, cwd."""
         session = db.get_session_by_id(session_id)
@@ -161,7 +168,7 @@ def _mount_t3_routes(app: FastAPI) -> None:
             "last_seen": session.get("last_seen"),
         }
 
-    @app.get("/session/{session_id}/events", response_model=list[models.EventInfo])
+    @app.get("/session/{session_id}/events", response_model=list[EventInfo])
     async def get_session_events(session_id: str, limit: int = 50):
         """Security events (containment blocks, honeytoken trips) for T4."""
         if not db.get_session_by_id(session_id):
@@ -177,7 +184,7 @@ def _mount_t3_routes(app: FastAPI) -> None:
             for e in events
         ]
 
-    @app.get("/session/{session_id}/honeytokens", response_model=list[models.HoneytokenInfo])
+    @app.get("/session/{session_id}/honeytokens", response_model=list[HoneytokenInfo])
     async def get_session_honeytokens(session_id: str):
         """Honeytoken status for T4: which canaries exist and whether they tripped."""
         if not db.get_session_by_id(session_id):
@@ -190,7 +197,8 @@ def _mount_t3_routes(app: FastAPI) -> None:
             details = e.get("details") or ""
             if e.get("event_type") == "HONEYTOKEN_ACCESS" and details.startswith("Path: "):
                 accesses.setdefault(details[len("Path: "):], e.get("timestamp"))
-        honeytokens = db.list_virtual_files(session_id) or []
+        # Canaries are planted at the session root; scan there only.
+        honeytokens = db.list_virtual_files(session_id, "/") or []
         return [
             {
                 "path": f["path"],
@@ -219,15 +227,16 @@ def _mount_legacy(app: FastAPI) -> None:
 
     @app.post("/legacy/command")
     async def legacy_command(session_id: str, command: str):
-        await legacy_db.init_db()
+        legacy_db.init_db()
         from . import router as legacy_router
 
-        return await legacy_router.process_command(session_id, command)
+        output = legacy_router.process_command(session_id, command)
+        return {"output": output}
 
     @app.get("/legacy/session_summary/{session_id}")
     async def legacy_summary(session_id: str):
-        await legacy_db.init_db()
-        return await legacy_threat.generate_summary(session_id)
+        legacy_db.init_db()
+        return legacy_threat.generate_threat_summary(session_id)
 
     log.info("legacy prototype mounted under /legacy")
 

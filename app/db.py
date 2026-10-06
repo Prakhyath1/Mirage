@@ -264,6 +264,17 @@ def get_all_events():
     conn.close()
     return [dict(row) for row in rows]
 
+def get_session_events(session_id, limit=50):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT * FROM events WHERE session_id = ?
+        ORDER BY timestamp DESC LIMIT ?
+    ''', (session_id, limit))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
 def get_session_by_id(session_id):
     conn = get_connection()
     c = conn.cursor()
