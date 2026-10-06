@@ -30,6 +30,7 @@ import asyncio
 import time
 
 from app.models import CommandRequest, CommandResult, ResultType
+from app.runtime.service import MirageRuntime
 
 
 class T3PipelineHandler:
@@ -65,17 +66,21 @@ class T3PipelineHandler:
                 exit_code=0,
                 duration=time.monotonic() - started,
                 result_type=ResultType.VFS,
-                metadata={"handler": self.name, "pipeline": "t3"},
+                metadata={
+                    "handler": self.name,
+                    "pipeline": "t3",
+                    # Same simulation flag the T1 fallback sets: the API
+                    # layer reports ``simulated`` from this metadata key.
+                    "simulated": True,
+                },
             )
-        except Exception as exc:  # T1 contract: return a failure result
-            return CommandResult.new(
-                command_id=request.command_id,
-                stderr=f"[mirage] pipeline error: {type(exc).__name__}",
-                exit_code=1,
-                duration=time.monotonic() - started,
-                result_type=ResultType.ERROR,
-                metadata={"handler": self.name, "error": type(exc).__name__},
-            )
+        except Exception:
+            # Propagate: the T1 dispatcher's isolation policy logs the
+            # failure, emits a runtime-error event, and falls through to
+            # the next handler — T1's SafeFallbackHandler answers the
+            # attacker with a simulated result, so the outage never
+            # surfaces as an error (and never executes anything).
+            raise
 
     def claims(self, request: CommandRequest) -> bool:
         """Claims every command: the T3 pipeline is the primary handler."""
@@ -105,7 +110,14 @@ def attach_default_handlers(service, *, include_t3: bool = True) -> None:
 
 
 def _find_dispatcher(service):
-    """FastAPI app or runtime service -> dispatcher, or None."""
+    """FastAPI app or runtime service -> dispatcher, or None.
+
+    The runtime service exposes ``dispatcher`` directly; a FastAPI app
+    carries it on ``app.state.runtime``. Handle both, plus the
+    underscored attribute a defensive caller might have used.
+    """
+    if isinstance(service, MirageRuntime) or hasattr(service, "dispatcher"):
+        return getattr(service, "dispatcher", None)
     target = getattr(service, "state", service)
     runtime = getattr(target, "runtime", None) or getattr(service, "runtime", None)
     dispatcher = getattr(runtime, "dispatcher", None)
