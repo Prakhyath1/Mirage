@@ -42,7 +42,7 @@ def handle_containment(session_id: str, command: str, cwd: str) -> str:
     if category == config.CATEGORY_UNKNOWN:
         # The sandbox is bypassed on the LLM path, so log the command row
         # here — every command must land in the logs exactly once.
-        output = llm_engine.generate_response(command, cwd)
+        output = llm_engine.generate_response(command, cwd, session_id=session_id)
         db.log_command(session_id, command, output, "llm")
         return output
 

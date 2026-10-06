@@ -7,6 +7,10 @@ the logs exactly once no matter which path dispatched it.
 
 Preserved contract:
     process_command(session_id, command) -> str
+
+T2 integration: the LLM-direct branch passes ``session_id`` through to the
+agent engine facade so per-session deception memory applies (T2's facade
+signature ``generate_response(command, cwd, session_id=...)``).
 """
 
 from . import behavior
@@ -42,7 +46,7 @@ def process_command(session_id, command):
             # Unknown/not-parsable: LLM engine answers, never the host.
             # The sandbox is bypassed here, so this branch logs its own row.
             from . import llm_engine
-            output = llm_engine.generate_response(command, cwd)
+            output = llm_engine.generate_response(command, cwd, session_id=session_id)
             db.log_command(session_id, command, output, "llm")
 
     return output

@@ -39,14 +39,18 @@ def test_db(monkeypatch):
 def no_llm(monkeypatch):
     """Force the LLM fallback offline so leak/log checks stay hermetic.
 
-    generate_response degrades to the generic fallback on any transport
-    failure, so stubbing requests.post keeps tests fast and deterministic
-    whether or not an Ollama happens to be running on this box.
+    The engine behind llm_engine is T2's agent stack; the HTTP transport
+    lives in the provider module (app.agent.providers.ollama), so stub it
+    there. generate_response degrades to the generic fallback on any
+    transport failure, keeping tests fast and deterministic whether or
+    not an Ollama happens to be running on this box.
     """
+    from app.agent.providers import ollama as ollama_provider
+
     def refused(*args, **kwargs):
         raise ConnectionError("connection refused")
 
-    monkeypatch.setattr(llm_engine.requests, "post", refused)
+    monkeypatch.setattr(ollama_provider.requests, "post", refused)
 
 
 # --- Path resolver: escape attempts ------------------------------------------

@@ -54,7 +54,10 @@ def execute(session_id: str, command: str, cwd: str, containment: bool = False) 
     output, new_cwd = vfs.execute_vfs_command(session_id, command, session["cwd"])
     if output is None:
         # Not a VFS builtin — the LLM engine answers instead. Never the host.
-        output = llm_engine.generate_response(command, session["cwd"])
+        # session_id flows through so T2's per-session deception memory applies.
+        output = llm_engine.generate_response(
+            command, session["cwd"], session_id=session_id
+        )
         source = "llm"
     else:
         source = "vfs"

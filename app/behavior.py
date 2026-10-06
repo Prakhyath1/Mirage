@@ -35,6 +35,38 @@ CATEGORY_WEIGHTS = {
 RECURSIVE_BONUS = 4        # rm -rf style flags
 CREDENTIAL_PATH_BONUS = 8  # cat /etc/shadow, /etc/passwd
 
+# Behavioral keyword vocabulary (v1 table, kept as a consumed contract).
+# Scoring authority is the classifier above (category weights + bonuses);
+# this table no longer contributes to scores. It is the data source for
+# T2's behavior-signals heuristic: app/agent/context.py reads it to report
+# which T3 keywords a command matches (docs/contracts/T2_AGENT_CONTRACTS.md
+# — "BehaviorSignals fields: T2 consumes, T3 owns"). Removing it breaks the
+# frozen cross-team contract, so it stays.
+THREAT_KEYWORDS = {
+    "nmap": 5,
+    "sudo": 3,
+    "passwd": 7,
+    "curl": 5,
+    "wget": 5,
+    "chmod": 2,
+    "777": 8,
+    "nc": 8,
+    "netcat": 8,
+    "python": 3,
+    "bash": 2,
+    "sh": 2,
+    "eval": 5,
+    "exec": 5,
+    "rm -rf": 10,
+    "dd": 4,
+    "history": 2,
+    "whoami": 1,
+    "id": 1,
+    "uname": 1,
+    "cat /etc": 5,
+    "shadow": 10,
+}
+
 
 def calculate_score(command: str) -> int:
     """Risk score for one command, from its parsed pipeline."""
