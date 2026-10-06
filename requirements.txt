@@ -1,6 +1,12 @@
 fastapi
 uvicorn
 streamlit
+pandas
 requests
 pydantic
 python-dotenv
+
+# test dependencies (T1 foundation + T3 dashboard + T4 integration suites)
+pytest
+pytest-asyncio
+httpx
